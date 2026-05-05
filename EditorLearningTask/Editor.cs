@@ -10,7 +10,7 @@ public sealed class Editor(Lexer lexer, Colorizer colorizer, Reader reader) : ID
 
     public void Display(int startLine, int count)
     {
-        reader.EnsureLine(startLine + count - 1);
+        reader.EnsureLineIsIndexed(startLine + count - 1);
 
         // Tokenize from a clean start so multi-line comment state is correct.
         int cleanStart = reader.FindCleanStartLine(startLine);
