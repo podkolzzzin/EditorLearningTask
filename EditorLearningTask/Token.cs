@@ -1,0 +1,1 @@
+﻿public record Token(int Start, int Length, int Value, string Text);
