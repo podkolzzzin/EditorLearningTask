@@ -30,11 +30,28 @@ public sealed class Editor(Lexer lexer, Colorizer colorizer, Reader reader) : ID
         Console.ResetColor();
     }
 
+    // Tokenize the whole file in batches without producing any output.
+    // Intended for benchmarking — results are discarded between batches.
+    public void TokenizeAll()
+    {
+        const int batchSize = 10_000;
+        int total = reader.IndexedLineCount;
+        for (int start = 0; start < total; start += batchSize)
+        {
+            int count = Math.Min(batchSize, total - start);
+            if (count <= 0)
+            {
+                return;
+            }
+            var lines = reader.ReadLines(start, count);
+            lexer.Tokenize(lines);
+        }
+    }
+
     public void Edit()
     {
         // ensure file is fully loaded and tokenized before allowing edits
-        while (!reader.IsFullyIndexed)
-            Thread.Sleep(10);
+        reader.WaitForFullIndexing();
     }
 
     public void Dispose() => reader.Dispose();

@@ -58,6 +58,12 @@ public sealed class Reader : IDisposable
         });
     }
 
+    // Block until the entire file has been scanned for line offsets.
+    public void WaitForFullIndexing()
+    {
+        _backgroundIndex?.Wait();
+    }
+
     // Block until line `lineIndex` is indexed with its end position known.
     public void EnsureLineIsIndexed(int lineIndex)
     {
@@ -176,8 +182,11 @@ public sealed class Reader : IDisposable
         long basePos = _scannedTo;
         for (int i = 0; i < toRead; i++)
         {
-            if (_scanBuffer[i] == (byte)'\n')
-                _lineStarts.Add(basePos + i + 1);
+            if (_scanBuffer[i] != (byte)'\n') continue;
+            long nextLineStart = basePos + i + 1;
+            // Skip the phantom entry past EOF when the file ends with '\n'.
+            if (nextLineStart < _fileSize)
+                _lineStarts.Add(nextLineStart);
         }
         _scannedTo += toRead;
     }
