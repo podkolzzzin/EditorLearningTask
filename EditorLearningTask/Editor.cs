@@ -1,6 +1,8 @@
-﻿namespace EditorLearningTask;
+﻿using EditorLearningTask.Writers;
 
-public sealed class Editor(Lexer lexer, Colorizer colorizer, Reader reader) : IDisposable
+namespace EditorLearningTask;
+
+public sealed class Editor(Lexer lexer, Colorizer colorizer, Reader reader, IWriter writer) : IDisposable
 {
     public void Initialize(string filePath)
     {
@@ -24,10 +26,9 @@ public sealed class Editor(Lexer lexer, Colorizer colorizer, Reader reader) : ID
         {
             foreach (var token in tokenLines[i])
             {
-                Console.ForegroundColor = colorizer.GetColor(token);
-                Console.Write(token.Text);
+                writer.Write(colorizer.GetColor(token), token.Text);
             }
-            Console.WriteLine();
+            writer.WriteLine();
         }
         Console.ResetColor();
     }

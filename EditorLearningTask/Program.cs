@@ -1,4 +1,5 @@
 ﻿using EditorLearningTask;
+using EditorLearningTask.Writers;
 
 if (args is ["generate", _, ..] && int.TryParse(args[1], out int requestedLines) && requestedLines > 0)
 {
@@ -8,7 +9,7 @@ if (args is ["generate", _, ..] && int.TryParse(args[1], out int requestedLines)
 if (File.Exists(Generator.FileName))
 {
     const int linesPerPage = 30;
-    var editor = new Editor(new Lexer(), new Colorizer(), new Reader());
+    var editor = new Editor(new Lexer(), new Colorizer(), new Reader(), new StubWriter());
     
     var time = new TimeMeasurement();
     using (time.Measure("Total time"))
