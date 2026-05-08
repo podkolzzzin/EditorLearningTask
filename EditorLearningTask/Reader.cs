@@ -15,6 +15,7 @@ public sealed class Reader : IDisposable
     private readonly List<long> _lineStarts = [0];
     private readonly ConcurrentDictionary<long, TaskCompletionSource> _lineAwaiters = [];
     private readonly Lock _lock = new();
+    private readonly CancellationTokenSource _disposeCancellationTokenSource = new();
 
     private MemoryMappedFile? _mmf;
     private MemoryMappedViewAccessor? _accessor;
@@ -40,10 +41,20 @@ public sealed class Reader : IDisposable
 
     public void StartBackgroundIndexing(Action? onFinishedIndexing = null)
     {
+        if (_backgroundIndex is not null)
+        {
+            return; // Already started
+        }
+        
         _backgroundIndex = Task.Run(() =>
         {
             while (true)
             {
+                if (_disposeCancellationTokenSource.IsCancellationRequested)
+                {
+                    return;
+                }
+                
                 lock (_lock)
                 {
                     if (IsFullyIndexed)
@@ -63,7 +74,7 @@ public sealed class Reader : IDisposable
         });
     }
 
-    // Wait until line `lineIndex` is indexed with its end position known.
+    // Wait until line `lineIndex` is indexed with its start position known.
     public Task EnsureLineIsIndexed(int lineIndex)
     {
         lock (_lock)
@@ -243,6 +254,9 @@ public sealed class Reader : IDisposable
 
     public void Dispose()
     {
+        _disposeCancellationTokenSource.Cancel();
+        try { _backgroundIndex?.Wait(); } catch { }
+
         _accessor?.Dispose();
         _mmf?.Dispose();
     }

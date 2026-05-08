@@ -12,7 +12,7 @@ public sealed class Editor(Lexer lexer, Colorizer colorizer, Reader reader, IWri
 
     public async Task Display(int startLine, int count)
     {
-        await reader.EnsureLineIsIndexed(startLine + count);
+        await reader.EnsureLineIsIndexed(startLine + count + 1);
 
         // Tokenize from a clean start so multi-line comment state is correct.
         var cleanStart = reader.FindCleanStartLine(startLine);
