@@ -6,6 +6,7 @@ public class ConsoleWriter : IWriter
     {
         Console.ForegroundColor = color;
         Console.Write(text);
+        Console.ResetColor();
     }
 
     public void WriteLine() => Console.WriteLine();

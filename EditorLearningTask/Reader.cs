@@ -1,8 +1,11 @@
 using System.Collections.Concurrent;
 using System.IO.MemoryMappedFiles;
 using System.Text;
+using System.Threading.Channels;
 
 namespace EditorLearningTask;
+
+public sealed record LineItem(int Index, string Text);
 
 // Reads file via memory-mapped view and incrementally indexes line offsets.
 // Indexing can run on a background thread; foreground requests cooperate
@@ -39,11 +42,11 @@ public sealed class Reader : IDisposable
         _accessor = _mmf.CreateViewAccessor(offset: 0, size: _fileSize, access: MemoryMappedFileAccess.Read);
     }
 
-    public void StartBackgroundIndexing(Action? onFinishedIndexing = null)
+    public Task StartBackgroundLineIndexing(ChannelWriter<LineItem> channelWriter, Action? onFinishedIndexing = null)
     {
         if (_backgroundIndex is not null)
         {
-            return; // Already started
+            return _backgroundIndex; // Already started
         }
         
         _backgroundIndex = Task.Run(() =>
@@ -52,6 +55,7 @@ public sealed class Reader : IDisposable
             {
                 if (_disposeCancellationTokenSource.IsCancellationRequested)
                 {
+                    channelWriter.Complete();
                     return;
                 }
                 
@@ -64,14 +68,24 @@ public sealed class Reader : IDisposable
                             lineAwaiter.Value.TrySetResult();
                         }
                         _lineAwaiters.Clear();
+                        channelWriter.Complete();
                         onFinishedIndexing?.Invoke();
                         return;
                     }
-                    
-                    ScanNextChunk();
+
+                    foreach (var lineItem in ScanNextChunk())
+                    {
+                        while (!_disposeCancellationTokenSource.IsCancellationRequested &&
+                               !channelWriter.TryWrite(lineItem))
+                        {
+                           // Spin until write succeeds or cancelled
+                        }
+                    }
                 }
             }
         });
+
+        return _backgroundIndex;
     }
 
     // Wait until line `lineIndex` is indexed with its start position known.
@@ -191,7 +205,7 @@ public sealed class Reader : IDisposable
         lock (_lock) return IndexedLineCount;
     }
     
-    private void ScanNextChunk()
+    private IEnumerable<LineItem> ScanNextChunk()
     {
         var toRead = Math.Min(ChunkSize, _fileSize - _scannedTo);
         if (toRead <= 0)
@@ -202,7 +216,7 @@ public sealed class Reader : IDisposable
             }
             _lineAwaiters.Clear();
 
-            return;
+            yield break;
         }
 
         if (_accessor is null)
@@ -217,7 +231,10 @@ public sealed class Reader : IDisposable
             {
                 continue;
             }
-            
+
+            var previousLineStart = _lineStarts[^1];
+            var lineIndex = IndexedLineCount - 1; // capture before potential add
+
             var nextLineStart = _scannedTo + i + 1;
             // Skip the phantom entry past EOF when the file ends with '\n'.
             if (nextLineStart < _fileSize)
@@ -228,9 +245,34 @@ public sealed class Reader : IDisposable
                     lineAwaiter.SetResult();
                 }
             }
+
+            var relativeStart = previousLineStart - _scannedTo;
+            var lineLength = nextLineStart - previousLineStart - 1;
+            var lineBuffer = _scanBuffer;
+
+            if (previousLineStart < _scannedTo)
+            {
+                lineBuffer = new byte[lineLength];
+                relativeStart = 0;
+                _accessor.ReadArray(previousLineStart, lineBuffer, offset: 0, (int)lineLength);
+            }
+
+            var text = Encoding.UTF8.GetString(lineBuffer, (int)relativeStart, (int)lineLength);
+            yield return new LineItem(lineIndex, text);
         }
         
         _scannedTo += toRead;
+
+        if (IsFullyIndexed)
+        {
+            // Return last line
+            var lastLineStart = _lineStarts[^1];
+            var lineLength = _fileSize - lastLineStart;
+            var lineBuffer = new byte[lineLength];
+            _accessor.ReadArray(lastLineStart, lineBuffer, offset: 0, (int)lineLength);
+            var text = Encoding.UTF8.GetString(lineBuffer, index: 0, (int)lineLength);
+            yield return new LineItem(IndexedLineCount - 1, text);
+        }
     }
 
 
